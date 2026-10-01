@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Pre-commit guard for NACKL-Swap: blocks secrets, and personal identifiers, from ever being committed.
+# Install:  bash tools/install-hooks.sh
+# Personal identifiers (names, emails, wallet ids) live OUTSIDE the repo in .git/info/private-patterns,
+# one extended regex per line, so this committed file never reveals what it protects.
+# Matches are never printed (redacted), so the hook cannot leak a secret into terminal history.
+set -u
+fail=0
+block() { echo "  BLOCKED: $1"; fail=1; }
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+
+# 1. Forbidden files, whatever their content (test keys included: treat every key as real).
+while IFS= read -r f; do
+  base=${f##*/}
+  case "$base" in
+    .env.example) ;;
+    *.keys.json|*.key|*.pem|*.seed|*.phrase|*mnemonic*|.env|.env.*|tvm-cli.conf.json) block "file not allowed in the repo: $f" ;;
+  esac
+done <<< "$staged"
+
+# 2. Secret patterns in the added lines.
+added=$(git diff --cached -U0 --diff-filter=ACMR | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+scan() { printf '%s\n' "$added" | grep -qE -- "$2" && block "$1"; }
+scan "TVM key pair (\"secret\": 64 hex)"            '"secret"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]{64}"'
+scan "private key assignment"                       '(PRIVATE|SECRET)_?KEY[[:space:]]*[=:][[:space:]]*["'"'"']?[0-9a-fA-F]{64}'
+scan "PEM private key"                              '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+scan "AWS access key"                               'AKIA[0-9A-Z]{16}'
+scan "GitHub token"                                 'gh[pousr]_[A-Za-z0-9]{36}'
+scan "Slack token"                                  'xox[baprs]-[A-Za-z0-9-]{10,}'
+scan "API key or token literal"                     '(api|access|auth)[_-]?(key|token|secret)[[:space:]]*[=:][[:space:]]*["'"'"'][A-Za-z0-9_\-]{24,}["'"'"']'
+scan "possible seed phrase (12-24 words in quotes)" '"([a-z]{3,8} ){11,23}[a-z]{3,8}"'
+
+# 3. Personal identifiers (local-only list).
+pp="$(git rev-parse --git-dir)/info/private-patterns"
+if [ -f "$pp" ]; then
+  n=0
+  while IFS= read -r pat || [ -n "$pat" ]; do
+    n=$((n+1)); pat=${pat%$'\r'}
+    case "$pat" in ''|\#*) continue ;; esac
+    printf '%s\n' "$added"  | grep -qiE -- "$pat" && block "personal identifier (private-patterns line $n) in file contents"
+    printf '%s\n' "$staged" | grep -qiE -- "$pat" && block "personal identifier (private-patterns line $n) in a file name"
+    printf '%s\n' "$(git config user.name) $(git config user.email)" | grep -qiE -- "$pat" \
+      && block "your commit identity matches private-patterns line $n: set an anonymous user.name/user.email"
+  done < "$pp"
+else
+  echo "  note: no .git/info/private-patterns file, so personal identifiers are not being checked"
+fi
+
+if [ "$fail" = 1 ]; then
+  echo "Commit blocked by tools/hooks/pre-commit. Remove the item above (a committed secret must be rotated, not just deleted)."
+  exit 1
+fi
+exit 0
