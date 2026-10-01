@@ -11,9 +11,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0          # scan the whole history, not just the last commit
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The gitleaks CLI directly (pinned image): gitleaks-action@v2 needs a licence key for
+      # organisation-owned repos. --redact keeps any match out of the public CI log.
+      - name: gitleaks (full history)
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.18.4 \
+            detect --source=/repo --redact --verbose --exit-code 1
 
   web-tests:
     # BOC decoder/encoder against real Shellnet events and tvm-cli reference bodies.
