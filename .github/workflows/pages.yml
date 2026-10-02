@@ -24,6 +24,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: node web/test_boc.mjs          # never publish a build whose codec tests fail
+      # Pages lets browsers cache files for 10 minutes. Stamping every file URL with the commit id makes
+      # a normal refresh load the new version right after a deploy (the repo itself keeps plain paths).
+      - name: cache-bust
+        run: |
+          V="${GITHUB_SHA::7}"
+          sed -i "s#src=\"\./app\.js\"#src=\"./app.js?v=$V\"#" web/index.html
+          sed -i "s#from \"\./config\.js\"#from \"./config.js?v=$V\"#; s#from \"\./boc\.js\"#from \"./boc.js?v=$V\"#" web/app.js
+          grep -q "app.js?v=$V" web/index.html && grep -q "config.js?v=$V" web/app.js && grep -q "boc.js?v=$V" web/app.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
