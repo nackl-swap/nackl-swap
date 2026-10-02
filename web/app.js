@@ -52,7 +52,7 @@ async function fetchLots() {
     const lot = e.lot.split(":")[1];
     if (!HEX64.test(lot)) continue;
     out.push({
-      lot, maker: e.maker, giveId: Number(e.giveId), giveAmount: e.giveAmount, wantId: Number(e.wantId),
+      lot, nonce: e.nonce.toString(), maker: e.maker, giveId: Number(e.giveId), giveAmount: e.giveAmount, wantId: Number(e.wantId),
       wantAmount: e.wantAmount, deadline: Number(e.deadline), createdAt: node.created_at, status: "…", held: 0n,
     });
   }
@@ -113,6 +113,27 @@ function ago(ts) {
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`; return `${Math.floor(s / 86400)} d ago`;
 }
 const short = (hex) => `${hex.slice(0, 6)}…${hex.slice(-4)}`;
+
+// ---------- friendly names (no raw addresses in front of people) ----------
+// A stable nickname derived from the wallet address: same wallet, same name; reveals nothing about the owner.
+const ADJ = ["Amber", "Azure", "Bold", "Brave", "Bright", "Calm", "Clever", "Coral", "Crimson", "Swift", "Gentle", "Golden",
+  "Jade", "Keen", "Lucky", "Lunar", "Mellow", "Misty", "Noble", "Ocean", "Quiet", "Royal", "Ruby", "Sage", "Silver", "Solar",
+  "Steady", "Sunny", "Velvet", "Vivid", "Wise", "Zesty"];
+const ANIMAL = ["Heron", "Falcon", "Otter", "Lynx", "Panda", "Fox", "Owl", "Dolphin", "Tiger", "Koala", "Raven", "Bison",
+  "Gecko", "Ibis", "Jaguar", "Lemur", "Marten", "Narwhal", "Orca", "Puffin", "Quokka", "Robin", "Seal", "Toucan", "Kestrel",
+  "Walrus", "Yak", "Zebra", "Badger", "Crane", "Egret", "Hare"];
+const acct = (addr) => String(addr).replace(/^.*[:]/, "").toLowerCase();
+function myAccount() { const m = store.get("wallet").toLowerCase().match(/([0-9a-f]{64})$/); return m ? m[1] : ""; }
+const isMine = (addr) => { const me = myAccount(); return !!me && acct(addr) === me; };
+function nickname(addr) {
+  const h = acct(addr);
+  return `${ADJ[parseInt(h.slice(0, 8), 16) % ADJ.length]} ${ANIMAL[parseInt(h.slice(8, 16), 16) % ANIMAL.length]}`;
+}
+function person(addr) {
+  const name = isMine(addr) ? "You" : nickname(addr);
+  const hue = parseInt(acct(addr).slice(16, 20), 16) % 360;
+  return `<span class="person"><span class="avatar" style="background:hsl(${hue} 65% 62%)">${esc(name[0])}</span>${esc(name)}</span>`;
+}
 const coin = (id, cls = "") => `<span class="coin c${id} ${cls}">${esc(sym(id)[0])}</span>`;
 
 // ---------- icons ----------
@@ -189,9 +210,9 @@ function rowHtml(l, p, best) {
     open: sellsBase ? `<span class="tag buy">Buy</span>` : `<span class="tag sell">Sell</span>`,
     expired: `<span class="tag exp">Expired</span>`, settled: `<span class="tag done">Filled</span>`, closed: `<span class="tag done">Done</span>`,
   }[l.status] || "";
-  const sub = l.status === "open"
+  const sub = (isMine(l.maker) ? "Your offer · " : "") + (l.status === "open"
     ? `${sellsBase ? "for" : "wants"} ${amt(quoteAmt, p.quote)} · ${timeLeft(l.deadline)}`
-    : `${amt(quoteAmt, p.quote)} · ${ago(l.createdAt)}`;
+    : `${amt(quoteAmt, p.quote)} · ${ago(l.createdAt)}`);
   return `<li class="row" data-lot="${l.lot}" tabindex="0" role="button" aria-label="${sellsBase ? "Buy" : "Sell"} ${fmt(baseAmt, dec(p.base))} ${sym(p.base)}">
     <span class="coins">${coin(sellsBase ? p.base : p.quote)}${coin(sellsBase ? p.quote : p.base)}</span>
     <span class="row-main"><b>${fmt(baseAmt, dec(p.base))} ${sym(p.base)}${best ? `<span class="best">Best</span>` : ""}</b><span>${esc(sub)}</span></span>
@@ -306,15 +327,21 @@ function viewTake(lotHex) {
           <div class="sum-row"><span>${coin(l.wantId)}You pay</span><b>${amt(l.wantAmount, l.wantId)}</b></div>
           <div class="sum-row"><span>${coin(l.giveId)}You get</span><b>${amt(l.giveAmount, l.giveId)}</b></div>
           <div class="sum-row"><span>Price</span><b style="font-size:14px">${fmt(priceOf(l, p), dec(p.quote), 6)} ${sym(p.quote)} per ${sym(p.base)}</b></div>
+          <div class="sum-row"><span>Offered by</span><b style="font-size:14px">${person(l.maker)}</b></div>
         </div>
         <div id="take-live"></div>
         <details class="more"><summary>Offer details</summary><dl>
-          <dt>Offer</dt><dd><code>${F}::${l.lot}</code></dd>
-          <dt>Seller</dt><dd><code>${esc(l.maker)}</code></dd>
+          <dt>Offer</dt><dd>#${esc(l.nonce)}</dd>
           <dt>Expires</dt><dd>${new Date(l.deadline * 1000).toLocaleString()}</dd>
           <dt>Fee</dt><dd>${Number(FEE_BPS) / 100}%, taken from what the offer's creator receives. You pay exactly the price.</dd>
-          <dt>Verified</dt><dd>Read from the factory's own on-chain events (<code>${short(F)}</code>).</dd>
-        </dl></details>`;
+          <dt>Verified</dt><dd>Created by the NACKL-Swap factory and read straight from the blockchain.</dd>
+          <dt>Privacy</dt><dd>Like every Acki Nacki transfer, trades are public on the blockchain. This site shows nicknames, not wallet addresses.</dd>
+        </dl>
+        <details class="more" style="margin:0 0 12px"><summary>Technical details</summary><dl>
+          <dt>Offer</dt><dd>${tapCode(`${F}::${l.lot}`, 10, 8)}</dd>
+          <dt>Seller</dt><dd>${tapCode(l.maker, 10, 8)}</dd>
+          <dt>Factory</dt><dd>${tapCode(F, 10, 8)}</dd>
+        </dl></details></details>`;
     },
     bind: (r) => { view.live(r); },
     live: (r) => {
@@ -389,7 +416,7 @@ function viewList(pre = {}) {
       <label class="field"><span>Amount of NACKL</span><div class="input"><input id="f-amount" inputmode="decimal" placeholder="1,000" value="${esc(s.amount)}" autocomplete="off"><em>NACKL</em></div></label>
       <label class="field"><span>Price per NACKL <button type="button" id="f-best"></button></span><div class="input"><input id="f-price" inputmode="decimal" placeholder="0.005" value="${esc(s.price)}" autocomplete="off"><em id="f-qsym">${sym(s.quote)}</em></div></label>
       <div class="field"><span>Offer stays open for</span><div class="chips" id="h-chips">${[[1, "1 hour"], [24, "1 day"], [72, "3 days"], [167, "7 days"]].map(([h, t]) => `<button data-h="${h}" aria-pressed="${s.hours === h}">${t}</button>`).join("")}</div></div>
-      <label class="field"><span>Your wallet address</span><div class="input"><input class="small" id="f-wallet" placeholder="dapp_id::account_id" value="${esc(s.wallet)}" autocomplete="off" spellcheck="false"></div></label>
+      <label class="field"><span>Your wallet address <small style="font-weight:500;color:var(--ink-3)">from your wallet's Receive screen</small></span><div class="input"><input class="small" id="f-wallet" placeholder="dapp_id::account_id" value="${esc(s.wallet)}" autocomplete="off" spellcheck="false"></div></label>
       <div class="quote" id="f-quote"></div>
       <p class="err" id="f-err"></p>
       <button class="btn light block" id="f-go">Continue</button>
@@ -548,7 +575,8 @@ async function main() {
     createLot: await abiId(functionSignature(ABI.createLot)),
     reclaim: await abiId(functionSignature(ABI.reclaim)),
   };
-  $("#factory").textContent = `${F}::${F}`;
+  $("#factory").outerHTML = tapCode(`${F}::${F}`, 8, 6);
+  bindCopy(document.querySelector("footer"));
   $("#testbar").hidden = !TEST;
   $("#pair-chip").addEventListener("click", () => openSheet(viewPairs()));
   $("#btn-buy").addEventListener("click", () => openSheet(viewOffers("asks")));
