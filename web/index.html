@@ -206,6 +206,12 @@
   details.more code, .mono { font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--ink-2); word-break: break-all; }
   .codebox { display: flex; gap: 8px; align-items: flex-start; background: rgba(0,0,0,.25); border-radius: 12px; padding: 10px; margin: 6px 0 12px; }
   .codebox code { flex: 1; white-space: pre-wrap; }
+  /* Long ids and payloads must never widen the page: wrap anywhere, shorten by default (code.tap). */
+  .codebox, .addr { min-width: 0; }
+  .codebox code, .addr code, code.tap { min-width: 0; word-break: break-all; overflow-wrap: anywhere; }
+  code.tap { cursor: pointer; text-decoration: underline dotted rgba(127,138,163,.6); text-underline-offset: 3px; }
+  code.cmd { max-height: 150px; overflow-y: auto; display: block; }
+  .sheet-card { overflow-x: hidden; }
 
   /* ---------- forms ---------- */
   .field { display: grid; gap: 6px; margin-bottom: 14px; }

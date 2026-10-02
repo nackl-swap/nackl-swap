@@ -228,7 +228,19 @@ function bindCopy(root) {
     try { await navigator.clipboard.writeText(b.dataset.copy); toast("Copied"); }
     catch { toast("Couldn't copy: select it and copy by hand"); }
   }));
+  // Shortened ids expand on tap (Copy always copies the full value).
+  $$("code.tap", root).forEach((c) => c.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const full = c.dataset.open !== "1";
+    c.textContent = full ? c.dataset.full : c.dataset.short;
+    c.dataset.open = full ? "1" : "0";
+  }));
 }
+
+/** Long id/payload shown as "start…end"; tap to see it all. */
+const mid = (s, a = 10, b = 8) => (s.length > a + b + 3 ? `${s.slice(0, a)}…${s.slice(-b)}` : s);
+const tapCode = (full, a, b) =>
+  `<code class="tap" data-full="${esc(full)}" data-short="${esc(mid(full, a, b))}" title="Tap to show all">${esc(mid(full, a, b))}</code>`;
 
 // ---------- views ----------
 function viewPairs() {
@@ -319,7 +331,7 @@ function viewTake(lotHex) {
             <div class="k">Send exactly</div>
             <div class="amount">${fmt(l.wantAmount, dec(l.wantId), 9)} <small>${TEST ? "test " : ""}${sym(l.wantId)}</small></div>
             <div class="k" style="margin-bottom:6px">to this offer</div>
-            <div class="addr"><code>${addr}</code><button class="btn dark" data-copy="${addr}">Copy</button></div>
+            <div class="addr">${tapCode(addr, 12, 8)}<button class="btn dark" data-copy="${addr}">Copy</button></div>
             <div class="pay-tools"><button class="btn light" style="border:1px solid #dfe5ef" data-copy="${fmt(l.wantAmount, dec(l.wantId), 9).replace(/,/g, "")}">Copy amount</button>${TEST ? "" : `<button class="btn light" style="border:1px solid #dfe5ef" id="qr-toggle">Show QR</button>`}</div>
             <div id="qr"></div>
           </div>
@@ -460,16 +472,16 @@ function viewListResult(q) {
       <ol class="steps">
         <li><span>From a ${TEST ? "Shellnet test wallet" : "wallet"} that can attach a message, send <b>${TEST ? `${fmt(q.giveAmount, dec(q.giveId))} test ${sym(q.giveId)}` : amt(q.giveAmount, q.giveId)}</b> to the NACKL-Swap factory, bounce on:</span></li>
       </ol>
-      <div class="codebox"><code>0:${F}</code><button class="btn ghost" data-copy="0:${F}">Copy</button></div>
+      <div class="codebox">${tapCode(`0:${F}`, 12, 8)}<button class="btn ghost" data-copy="0:${F}">Copy</button></div>
       <ol class="steps" start="2" style="counter-reset:s 1">
         <li><span>Attach this message (it holds your price and expiry):</span></li>
       </ol>
-      <div class="codebox"><code>${payload}</code><button class="btn ghost" data-copy="${payload}">Copy</button></div>
+      <div class="codebox">${tapCode(payload, 14, 8)}<button class="btn ghost" data-copy="${payload}">Copy</button></div>
       <ol class="steps" style="counter-reset:s 2">
         <li><span>Your offer appears in the market within seconds. When someone buys, <b>${amt(q.wantAmount - q.fee, q.wantId)}</b> arrives in your wallet automatically.</span></li>
       </ol>
       <details class="more"><summary>Using tvm-cli with a multisig wallet</summary>
-        <div class="codebox"><code>${esc(cmd)}</code><button class="btn ghost" data-copy="${esc(cmd)}">Copy</button></div>
+        <div class="codebox"><code class="cmd">${esc(cmd)}</code><button class="btn ghost" data-copy="${esc(cmd)}">Copy</button></div>
         <p style="margin:0 0 12px">Destination DApp: <code>${F}</code></p></details>
       <div class="safe">${ICON.shield}<span>NACKL-Swap never asks for your keys or seed phrase. Anyone who does is trying to steal from you.</span></div>`,
     bind: (r) => bindCopy(r),
@@ -496,7 +508,7 @@ function viewMine() {
           const p = PAIRS.find((x) => [x.base, x.quote].includes(l.giveId) && [x.base, x.quote].includes(l.wantId)) || pair();
           return rowHtml(l, p, false) + (l.status === "open" || l.status === "expired" ? `
             <li style="list-style:none;padding:0 12px 12px"><details class="more" style="margin:0"><summary>Cancel and get my ${sym(l.giveId)} back</summary>
-              <p style="margin:0 0 8px">Send the offer <code>0:${l.lot}</code> (DApp <code>${short(F)}</code>) a message with <b>no coins</b>, bounce on, carrying:</p>
+              <p style="margin:0 0 8px">Send the offer ${tapCode(`0:${l.lot}`, 12, 8)} (DApp <code>${short(F)}</code>) a message with <b>no coins</b>, bounce on, carrying:</p>
               <div class="codebox"><code>${cancel}</code><button class="btn ghost" data-copy="${cancel}">Copy</button></div>
               ${l.status === "expired" ? `<p style="margin:0 0 12px">It has expired, so anyone can also return it to you.</p>` : ""}</details></li>` : "");
         }).join("")}</ul>`;
