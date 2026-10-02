@@ -2,6 +2,8 @@
 # Demo data for the web app (Shellnet only, test wallets from the Phase 2a suite).
 #   bash demo_lots.sh          create 3 asks (sell NACKL for SHELL) + 1 bid (buy NACKL with SHELL), 6-day expiry
 #   bash demo_lots.sh take     taker pays the cheapest open ask with a PLAIN transfer (pay-to-take)
+#   bash demo_lots.sh send GIVE_ID GIVE_UNITS PAYLOAD
+#                              test maker sends a createLot message prepared on the website (List flow, end to end)
 # Run from WSL:  cd <repo>/tests && bash demo_lots.sh
 set -u
 cd "$(dirname "$0")"
@@ -34,6 +36,16 @@ lot() {  # giveId giveUnits wantId wantNano
   send "$MKEYS" "$MHEX" "$FHEX" true "{\"$1\":\"$(( $2 * N ))\"}" "$p"
   sleep 12
 }
+
+if [ "${1:-}" = "send" ]; then
+  [[ "${2:-}" =~ ^[123]$ && "${3:-}" =~ ^[0-9]+$ && "${4:-}" =~ ^te6[A-Za-z0-9+/=]+$ ]] \
+    || die "usage: bash demo_lots.sh send GIVE_ID GIVE_UNITS PAYLOAD   (copy it from the website's List screen)"
+  UNIT=$N; [ "$2" = 3 ] && UNIT=1000000            # USDC has 6 decimals
+  echo "test maker sends $3 of currency #$2 with the website's payload to the factory"
+  send "$MKEYS" "$MHEX" "$FHEX" true "{\"$2\":\"$(( $3 * UNIT ))\"}" "$4"
+  echo "watch the website: it should switch to 'Your offer is live' within seconds"
+  exit 0
+fi
 
 if [ "${1:-}" = "take" ]; then
   # cheapest open ask: scan the newest lots via the factory's lotAccountId + balances

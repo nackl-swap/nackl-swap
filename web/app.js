@@ -496,9 +496,14 @@ function viewListResult(q) {
   let from = "<your-wallet-address>";
   try { const w = parseWallet(store.get("wallet")); from = `${w.dapp}::${w.account}`; } catch { /* placeholder */ }
   const cmd = `tvm-cli call ${from} submitTransaction '${args}' --abi UpdateCustodianMultisigWallet_v2.abi.json --sign <your-key-file>`;
+  const key = termsKey(q.giveId, q.giveAmount, q.wantId, q.wantAmount, Number(deadline));
   return {
     title: "Send to create your offer",
     html: () => `
+      <div class="note" style="margin:0 0 12px;color:var(--ink-2)">
+        <b style="color:var(--ink)">This last step happens in your wallet, not on this page.</b> It needs a wallet that can send coins
+        <i>with an attached message</i>. Today that means developer wallets (tvm-cli); the Acki Nacki Wallet app can't attach
+        messages yet, and we've asked the Acki Nacki team to add it. <b style="color:var(--ink)">Buying</b> already works with a plain transfer.</div>
       <div class="sum">
         <div class="sum-row"><span>${coin(q.giveId)}You put in</span><b>${amt(q.giveAmount, q.giveId)}</b></div>
         <div class="sum-row"><span>${coin(q.wantId)}You receive</span><b>${amt(q.wantAmount - q.fee, q.wantId)}</b></div>
@@ -516,11 +521,27 @@ function viewListResult(q) {
       <ol class="steps" style="counter-reset:s 2">
         <li><span>Your offer appears in the market within seconds. When someone buys, <b>${amt(q.wantAmount - q.fee, q.wantId)}</b> arrives in your wallet automatically.</span></li>
       </ol>
+      <div id="track"><div class="live"><i></i><span>Watching the blockchain for your offer… this page updates by itself once you've sent it.</span></div></div>
       <details class="more"><summary>Using tvm-cli with a multisig wallet</summary>
         <div class="codebox"><code class="cmd">${esc(cmd)}</code><button class="btn ghost" data-copy="${esc(cmd)}">Copy</button></div>
         <p style="margin:0 0 12px">Destination DApp: <code>${F}</code></p></details>
+      ${TEST && q.giveAmount % 10n ** BigInt(dec(q.giveId)) === 0n ? `<details class="more"><summary>Shellnet test helper (repo script)</summary>
+        <p style="margin:0 0 6px">Sends this exact offer from the repo's test seller wallet:</p>
+        <div class="codebox"><code class="cmd">bash tests/demo_lots.sh send ${q.giveId} ${q.giveAmount / 10n ** BigInt(dec(q.giveId))} ${payload}</code><button class="btn ghost" data-copy="bash tests/demo_lots.sh send ${q.giveId} ${q.giveAmount / 10n ** BigInt(dec(q.giveId))} ${payload}">Copy</button></div></details>` : ""}
       <div class="safe">${ICON.shield}<span>NACKL-Swap never asks for your keys or seed phrase. Anyone who does is trying to steal from you.</span></div>`,
-    bind: (r) => bindCopy(r),
+    bind: (r) => { bindCopy(r); },
+    // Called on every refresh: flips to "live" as soon as an offer with exactly these terms is on chain.
+    live: (r) => {
+      const t = $("#track", r);
+      if (!t || t.dataset.done) return;
+      const l = lots.find((x) => termsKey(x.giveId, x.giveAmount, x.wantId, x.wantAmount, x.deadline) === key);
+      if (!l) return;
+      t.dataset.done = "1";
+      t.innerHTML = `<div class="done-card"><div class="check">${ICON.check}</div><h4>Your offer is live</h4>
+        <p>Offer #${esc(l.nonce)} is in the market. You'll be paid automatically when someone buys.</p></div>
+        <button class="btn light block" style="margin-top:14px" id="see-offer">See my offer</button>`;
+      $("#see-offer", t).addEventListener("click", () => push(viewTake(l.lot)));
+    },
   };
 }
 
