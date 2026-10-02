@@ -125,12 +125,19 @@ const ANIMAL = ["Heron", "Falcon", "Otter", "Lynx", "Panda", "Fox", "Owl", "Dolp
 const acct = (addr) => String(addr).replace(/^.*[:]/, "").toLowerCase();
 function myAccount() { const m = store.get("wallet").toLowerCase().match(/([0-9a-f]{64})$/); return m ? m[1] : ""; }
 const isMine = (addr) => { const me = myAccount(); return !!me && acct(addr) === me; };
+// Offers prepared in this browser, remembered by their exact terms (the deadline is to the second), so
+// "My offers" works without ever asking for a wallet address. Local to this browser only.
+function prepared() { try { return JSON.parse(store.get("prepared") || "[]"); } catch { return []; } }
+function rememberPrepared(t) { const list = [t, ...prepared()].slice(0, 50); store.set("prepared", JSON.stringify(list)); }
+const termsKey = (giveId, giveAmount, wantId, wantAmount, deadline) => `${giveId}:${giveAmount}:${wantId}:${wantAmount}:${deadline}`;
+const mineLot = (l) => isMine(l.maker)
+  || prepared().includes(termsKey(l.giveId, l.giveAmount, l.wantId, l.wantAmount, l.deadline));
 function nickname(addr) {
   const h = acct(addr);
   return `${ADJ[parseInt(h.slice(0, 8), 16) % ADJ.length]} ${ANIMAL[parseInt(h.slice(8, 16), 16) % ANIMAL.length]}`;
 }
-function person(addr) {
-  const name = isMine(addr) ? "You" : nickname(addr);
+function person(addr, mine = isMine(addr)) {
+  const name = mine ? "You" : nickname(addr);
   const hue = parseInt(acct(addr).slice(16, 20), 16) % 360;
   return `<span class="person"><span class="avatar" style="background:hsl(${hue} 65% 62%)">${esc(name[0])}</span>${esc(name)}</span>`;
 }
@@ -210,7 +217,7 @@ function rowHtml(l, p, best) {
     open: sellsBase ? `<span class="tag buy">Buy</span>` : `<span class="tag sell">Sell</span>`,
     expired: `<span class="tag exp">Expired</span>`, settled: `<span class="tag done">Filled</span>`, closed: `<span class="tag done">Done</span>`,
   }[l.status] || "";
-  const sub = (isMine(l.maker) ? "Your offer · " : "") + (l.status === "open"
+  const sub = (mineLot(l) ? "Your offer · " : "") + (l.status === "open"
     ? `${sellsBase ? "for" : "wants"} ${amt(quoteAmt, p.quote)} · ${timeLeft(l.deadline)}`
     : `${amt(quoteAmt, p.quote)} · ${ago(l.createdAt)}`);
   return `<li class="row" data-lot="${l.lot}" tabindex="0" role="button" aria-label="${sellsBase ? "Buy" : "Sell"} ${fmt(baseAmt, dec(p.base))} ${sym(p.base)}">
@@ -327,7 +334,7 @@ function viewTake(lotHex) {
           <div class="sum-row"><span>${coin(l.wantId)}You pay</span><b>${amt(l.wantAmount, l.wantId)}</b></div>
           <div class="sum-row"><span>${coin(l.giveId)}You get</span><b>${amt(l.giveAmount, l.giveId)}</b></div>
           <div class="sum-row"><span>Price</span><b style="font-size:14px">${fmt(priceOf(l, p), dec(p.quote), 6)} ${sym(p.quote)} per ${sym(p.base)}</b></div>
-          <div class="sum-row"><span>Offered by</span><b style="font-size:14px">${person(l.maker)}</b></div>
+          <div class="sum-row"><span>Offered by</span><b style="font-size:14px">${person(l.maker, mineLot(l))}</b></div>
         </div>
         <div id="take-live"></div>
         <details class="more"><summary>Offer details</summary><dl>
@@ -403,7 +410,6 @@ function viewTake(lotHex) {
 function viewList(pre = {}) {
   const s = {
     side: pre.side || "sell", quote: pair().quote, amount: "", price: "", hours: 24,
-    wallet: store.get("wallet"),
   };
   const view = {
     title: "Create an offer",
@@ -416,14 +422,13 @@ function viewList(pre = {}) {
       <label class="field"><span>Amount of NACKL</span><div class="input"><input id="f-amount" inputmode="decimal" placeholder="1,000" value="${esc(s.amount)}" autocomplete="off"><em>NACKL</em></div></label>
       <label class="field"><span>Price per NACKL <button type="button" id="f-best"></button></span><div class="input"><input id="f-price" inputmode="decimal" placeholder="0.005" value="${esc(s.price)}" autocomplete="off"><em id="f-qsym">${sym(s.quote)}</em></div></label>
       <div class="field"><span>Offer stays open for</span><div class="chips" id="h-chips">${[[1, "1 hour"], [24, "1 day"], [72, "3 days"], [167, "7 days"]].map(([h, t]) => `<button data-h="${h}" aria-pressed="${s.hours === h}">${t}</button>`).join("")}</div></div>
-      <label class="field"><span>Your wallet address <small style="font-weight:500;color:var(--ink-3)">from your wallet's Receive screen</small></span><div class="input"><input class="small" id="f-wallet" placeholder="dapp_id::account_id" value="${esc(s.wallet)}" autocomplete="off" spellcheck="false"></div></label>
       <div class="quote" id="f-quote"></div>
       <p class="err" id="f-err"></p>
       <button class="btn light block" id="f-go">Continue</button>
       <p class="note">You'll get a ready-made message to send from your wallet. Your coins go straight into the new offer's own contract, never to us.</p>`,
     bind: (r) => {
       const recalc = () => {
-        s.amount = $("#f-amount", r).value; s.price = $("#f-price", r).value; s.wallet = $("#f-wallet", r).value;
+        s.amount = $("#f-amount", r).value; s.price = $("#f-price", r).value;
         const p = PAIRS.find((x) => x.quote === s.quote);
         const best = s.side === "sell" ? asksOf(p)[0] : bidsOf(p)[0];
         const bestBtn = $("#f-best", r);
@@ -442,11 +447,10 @@ function viewList(pre = {}) {
       $$("[data-side]", r).forEach((b) => b.addEventListener("click", () => { s.side = b.dataset.side; $$("[data-side]", r).forEach((x) => x.setAttribute("aria-pressed", x === b)); recalc(); }));
       $$("[data-q]", r).forEach((b) => b.addEventListener("click", () => { s.quote = Number(b.dataset.q); $$("[data-q]", r).forEach((x) => x.setAttribute("aria-pressed", x === b)); recalc(); }));
       $$("[data-h]", r).forEach((b) => b.addEventListener("click", () => { s.hours = Number(b.dataset.h); $$("[data-h]", r).forEach((x) => x.setAttribute("aria-pressed", x === b)); recalc(); }));
-      ["#f-amount", "#f-price", "#f-wallet"].forEach((id) => $(id, r).addEventListener("input", recalc));
+      ["#f-amount", "#f-price"].forEach((id) => $(id, r).addEventListener("input", recalc));
       $("#f-go", r).addEventListener("click", () => {
         const q = computeOffer(s);
         if (!q.ok) { $("#f-err", r).textContent = q.error; return; }
-        store.set("wallet", s.wallet.trim());
         push(viewListResult(q));
       });
       recalc();
@@ -467,8 +471,7 @@ function computeOffer(s) {
     if (giveAmount < CURRENCIES[giveId].minGive) throw new Error(`The smallest offer is ${amt(CURRENCIES[giveId].minGive, giveId)} (you'd put in ${amt(giveAmount, giveId)}).`);
     if (wantAmount <= 0n) throw new Error("That price is too small");
     if (!(s.hours >= 1 && s.hours * 3600 <= MAX_TTL_SECONDS)) throw new Error("Pick how long the offer stays open");
-    const w = parseWallet(s.wallet);
-    return { ok: true, giveId, giveAmount, wantId, wantAmount, fee: (wantAmount * FEE_BPS) / 10000n, hours: s.hours, wallet: w };
+    return { ok: true, giveId, giveAmount, wantId, wantAmount, fee: (wantAmount * FEE_BPS) / 10000n, hours: s.hours };
   } catch (e) { return { ok: false, error: e.message }; }
 }
 
@@ -483,10 +486,16 @@ function parseWallet(str) {
 function viewListResult(q) {
   // Deadline slightly inside the chosen window so the message still lands within the 7-day limit.
   const deadline = BigInt(Math.floor(Date.now() / 1000) + q.hours * 3600 - 120);
+  // No wallet address needed: the lot records the sender as the seller, and payouts reach an EXISTING wallet
+  // by account id whatever DApp id they name (Phase 1 T8, spike 6 C6), exactly as pay-to-take buyers are paid.
+  // So the seller's DApp field carries our own DApp id.
   const payload = encodeCallBody(IDS.createLot, ABI.createLot.inputs,
-    { giveId: q.giveId, wantId: q.wantId, wantAmount: q.wantAmount, deadline, makerDapp: BigInt("0x" + q.wallet.dapp) });
+    { giveId: q.giveId, wantId: q.wantId, wantAmount: q.wantAmount, deadline, makerDapp: BigInt("0x" + F) });
   const args = JSON.stringify({ dest: `0:${F}`, value: "10000000", cc: { [q.giveId]: q.giveAmount.toString() }, bounce: true, flag: 1, payload, dapp_id: `0x${F}` });
-  const cmd = `tvm-cli call ${q.wallet.dapp}::${q.wallet.account} submitTransaction '${args}' --abi UpdateCustodianMultisigWallet_v2.abi.json --sign <your-key-file>`;
+  rememberPrepared(termsKey(q.giveId, q.giveAmount, q.wantId, q.wantAmount, Number(deadline)));
+  let from = "<your-wallet-address>";
+  try { const w = parseWallet(store.get("wallet")); from = `${w.dapp}::${w.account}`; } catch { /* placeholder */ }
+  const cmd = `tvm-cli call ${from} submitTransaction '${args}' --abi UpdateCustodianMultisigWallet_v2.abi.json --sign <your-key-file>`;
   return {
     title: "Send to create your offer",
     html: () => `
@@ -519,17 +528,23 @@ function viewMine() {
   const view = {
     title: "My offers",
     html: () => `
-      <label class="field"><span>Your wallet address</span><div class="input"><input class="small" id="m-wallet" placeholder="dapp_id::account_id" value="${esc(store.get("wallet"))}" autocomplete="off" spellcheck="false"></div></label>
-      <div id="m-out"></div>`,
+      <div id="m-out"></div>
+      <details class="more"${store.get("wallet") ? " open" : ""}><summary>Offers made from another device?</summary>
+        <label class="field" style="margin-top:2px"><span>Find them by wallet address (optional)</span><div class="input"><input class="small" id="m-wallet" placeholder="dapp_id::account_id" value="${esc(store.get("wallet"))}" autocomplete="off" spellcheck="false"></div></label>
+      </details>`,
     bind: (r) => {
       const run = () => {
         const out = $("#m-out", r);
         const v = $("#m-wallet", r).value.trim().toLowerCase();
         const m = v.match(/^(?:[0-9a-f]{64}::|0:)?([0-9a-f]{64})$/);
-        if (!m) { out.innerHTML = v ? `<p class="err">Paste your wallet address (dapp_id::account_id).</p>` : `<p class="note">Your offers from the last ${EVENTS_TO_SCAN} on chain will show here.</p>`; return; }
-        store.set("wallet", v);
-        const mine = lots.filter((l) => l.maker === `0:${m[1]}`).sort((a, b) => b.createdAt - a.createdAt);
-        if (!mine.length) { out.innerHTML = `<div class="empty-state"><b>No offers from this wallet</b>Offers you create will appear here.</div>`; return; }
+        if (m) store.set("wallet", v); else if (!v) store.set("wallet", "");
+        // Offers prepared in this browser (no address needed), plus any found by the optional wallet address.
+        const mine = lots.filter((l) => mineLot(l) || (m && l.maker === `0:${m[1]}`)).sort((a, b) => b.createdAt - a.createdAt);
+        if (!mine.length) {
+          out.innerHTML = v && !m ? `<p class="err">That doesn't look like a wallet address (dapp_id::account_id).</p>`
+            : `<div class="empty-state"><b>No offers yet</b>Offers you prepare on this device show up here automatically once they're on chain.</div>`;
+          return;
+        }
         const cancel = encodeCallBody(IDS.reclaim, [], {});
         out.innerHTML = `<ul class="rows">${mine.map((l) => {
           const p = PAIRS.find((x) => [x.base, x.quote].includes(l.giveId) && [x.base, x.quote].includes(l.wantId)) || pair();
