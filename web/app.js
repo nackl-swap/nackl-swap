@@ -10,6 +10,7 @@ const HEX64 = /^[0-9a-f]{64}$/;
 // ?factory=<hex64> previews another test factory (e.g. right after a test-suite run); otherwise config.js.
 const override = (new URLSearchParams(location.search).get("factory") || "").toLowerCase();
 const F = HEX64.test(override) ? override : net.factory;
+const TEST = !!net.test;              // test network: banner, "test" labels, no real-wallet instructions
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -313,22 +314,26 @@ function viewTake(lotHex) {
         if (box.dataset.state === "open") { $(".live span", box).textContent = `Waiting for your payment · ${timeLeft(l.deadline)}`; return; }
         box.dataset.state = "open";
         box.innerHTML = `
-          <div class="pay">
+          ${TEST ? `<div class="danger">${ICON.shield}<span><b>Test offer: test coins only.</b> Don't pay it from the Acki Nacki Wallet app or any real wallet. That would send <b>real</b> ${sym(l.wantId)} to an address that doesn't exist on mainnet, and it could be lost.</span></div>` : ""}
+          <div class="pay"${TEST ? ' style="margin-top:12px"' : ""}>
             <div class="k">Send exactly</div>
-            <div class="amount">${fmt(l.wantAmount, dec(l.wantId), 9)} <small>${sym(l.wantId)}</small></div>
+            <div class="amount">${fmt(l.wantAmount, dec(l.wantId), 9)} <small>${TEST ? "test " : ""}${sym(l.wantId)}</small></div>
             <div class="k" style="margin-bottom:6px">to this offer</div>
             <div class="addr"><code>${addr}</code><button class="btn dark" data-copy="${addr}">Copy</button></div>
-            <div class="pay-tools"><button class="btn light" style="border:1px solid #dfe5ef" data-copy="${fmt(l.wantAmount, dec(l.wantId), 9).replace(/,/g, "")}">Copy amount</button><button class="btn light" style="border:1px solid #dfe5ef" id="qr-toggle">Show QR</button></div>
+            <div class="pay-tools"><button class="btn light" style="border:1px solid #dfe5ef" data-copy="${fmt(l.wantAmount, dec(l.wantId), 9).replace(/,/g, "")}">Copy amount</button>${TEST ? "" : `<button class="btn light" style="border:1px solid #dfe5ef" id="qr-toggle">Show QR</button>`}</div>
             <div id="qr"></div>
           </div>
           <ol class="steps">
-            <li><span>Open your <b>Acki Nacki Wallet</b> and send <b>${amt(l.wantAmount, l.wantId)}</b> to the address above, as a normal transfer.</span></li>
-            <li><span>Your <b>${amt(l.giveAmount, l.giveId)}</b> arrives in the same wallet within seconds.</span></li>
+            ${TEST
+              ? `<li><span>From a <b>Shellnet test wallet</b> (developers: tvm-cli), send <b>${fmt(l.wantAmount, dec(l.wantId))} test ${sym(l.wantId)}</b> to the address above, as a plain transfer.</span></li>
+                 <li><span>The test wallet receives <b>${fmt(l.giveAmount, dec(l.giveId))} test ${sym(l.giveId)}</b> within seconds.</span></li>`
+              : `<li><span>Open your <b>Acki Nacki Wallet</b> and send <b>${amt(l.wantAmount, l.wantId)}</b> to the address above, as a normal transfer.</span></li>
+                 <li><span>Your <b>${amt(l.giveAmount, l.giveId)}</b> arrives in the same wallet within seconds.</span></li>`}
           </ol>
           ${l.wantId === 2 ? `<div class="safe">${ICON.shield}<span>Send SHELL <b>as SHELL</b>. Don't convert it to gas first: converted SHELL can't be refunded.</span></div>` : ""}
           <div class="live"><i></i><span>Waiting for your payment · ${timeLeft(l.deadline)}</span></div>`;
         bindCopy(box);
-        $("#qr-toggle", box).addEventListener("click", (e) => {
+        $("#qr-toggle", box)?.addEventListener("click", (e) => {
           const q = $("#qr", box);
           if (!q.dataset.made && window.QRCode) { try { new window.QRCode(q, { text: addr, width: 168, height: 168, colorDark: "#0b1224", colorLight: "#ffffff" }); q.dataset.made = 1; } catch { /* optional */ } }
           q.classList.toggle("on"); e.target.textContent = q.classList.contains("on") ? "Hide QR" : "Show QR";
@@ -451,8 +456,9 @@ function viewListResult(q) {
         <div class="sum-row"><span>${coin(q.wantId)}You receive</span><b>${amt(q.wantAmount - q.fee, q.wantId)}</b></div>
         <div class="sum-row"><span>Open until</span><b style="font-size:14px">${new Date(Number(deadline) * 1000).toLocaleString()}</b></div>
       </div>
+      ${TEST ? `<div class="danger">${ICON.shield}<span><b>Test network.</b> Send this only from a Shellnet <b>test</b> wallet. From a real wallet, real coins would go to an address that doesn't exist on mainnet.</span></div>` : ""}
       <ol class="steps">
-        <li><span>From a wallet that can attach a message, send <b>${amt(q.giveAmount, q.giveId)}</b> to the NACKL-Swap factory, bounce on:</span></li>
+        <li><span>From a ${TEST ? "Shellnet test wallet" : "wallet"} that can attach a message, send <b>${TEST ? `${fmt(q.giveAmount, dec(q.giveId))} test ${sym(q.giveId)}` : amt(q.giveAmount, q.giveId)}</b> to the NACKL-Swap factory, bounce on:</span></li>
       </ol>
       <div class="codebox"><code>0:${F}</code><button class="btn ghost" data-copy="0:${F}">Copy</button></div>
       <ol class="steps" start="2" style="counter-reset:s 1">
@@ -531,6 +537,7 @@ async function main() {
     reclaim: await abiId(functionSignature(ABI.reclaim)),
   };
   $("#factory").textContent = `${F}::${F}`;
+  $("#testbar").hidden = !TEST;
   $("#pair-chip").addEventListener("click", () => openSheet(viewPairs()));
   $("#btn-buy").addEventListener("click", () => openSheet(viewOffers("asks")));
   $("#btn-sell").addEventListener("click", () => openSheet(viewSellChoice()));

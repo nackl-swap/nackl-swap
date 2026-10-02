@@ -39,6 +39,13 @@
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 10px; }
   .glass { background: var(--glass); border: 1px solid var(--glass-line); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
 
+  .testbar { position: sticky; top: 0; z-index: 20; text-align: center; font-size: 13px; line-height: 1.4; padding: 8px 16px;
+    background: #fbbf24; color: #1f1400; }
+  .testbar b { font-weight: 800; }
+  .danger { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; color: #fecaca; background: rgba(251,113,133,.14);
+    border: 1px solid rgba(251,113,133,.35); border-radius: 12px; padding: 10px 12px; margin-top: 14px; }
+  .danger b { color: #fff; }
+
   /* ---------- top bar ---------- */
   .top { max-width: 1120px; margin: 0 auto; padding: max(18px, env(safe-area-inset-top)) 16px 8px;
     display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -234,6 +241,9 @@
 </head>
 <body>
 <div class="bg"></div>
+<div class="testbar" id="testbar" hidden role="note">
+  <b>Test network.</b> Test coins only, worth nothing. <b>Never send real NACKL or SHELL here</b> (for example from the Acki Nacki Wallet app): they would be lost.
+</div>
 
 <header class="top">
   <div class="brand"><span class="mark">N</span>NACKL-Swap</div>

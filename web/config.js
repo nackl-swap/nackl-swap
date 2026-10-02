@@ -5,6 +5,10 @@ export const NETWORKS = {
     graphql: "https://shellnet.ackinacki.org/graphql",
     // Test factory from tests/run_phase2a.sh (run 8, F13 fix). Self-rooted: DApp id == account id.
     factory: "4b836d3882909947835990768b8dbfff9170dec151681db2d5e584ae32789405",
+    // Test network: coins have no value and do NOT exist on mainnet. The Acki Nacki Wallet app is a
+    // mainnet wallet, so the UI must never invite paying test offers from it (real coins would go to an
+    // address that doesn't exist on mainnet). Drives the banner, "test" coin labels and pay instructions.
+    test: true,
   },
   // mainnet: added only after an independent audit (PROJECT_BRIEF.md).
 };
